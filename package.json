@@ -1,9 +1,17 @@
 {
   "name": "dsh-shareone-plugin",
-  "version": "0.1.0-beta.0",
+  "version": "0.1.0-beta.1",
   "description": "ShareOne tools for DeepSeek Harness",
   "type": "module",
   "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sudoprivacy/dsh-shareone-plugin.git"
+  },
+  "homepage": "https://github.com/sudoprivacy/dsh-shareone-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/sudoprivacy/dsh-shareone-plugin/issues"
+  },
   "scripts": {
     "check": "node --check index.js",
     "smoke": "node ./scripts/smoke-register.mjs",
