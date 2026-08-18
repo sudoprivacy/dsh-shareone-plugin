@@ -168,13 +168,27 @@ endpoint with an API key.
 
 Create a temporary ShareOne guest API key for first-time use.
 
-## Publish
+## Release
 
-Publish to npm:
+Publishing is handled by GitHub Actions when a version tag is pushed.
+
+One-time setup:
+
+```txt
+GitHub repo secret NPM_TOKEN = npm automation token with publish access
+```
+
+Release a new version:
 
 ```bash
-npm publish --access public
+npm version patch
+git push origin main --follow-tags
 ```
+
+The workflow runs on tags matching `v*.*.*`. It checks that the tag version
+matches `package.json`, installs dependencies with `npm ci`, runs syntax and
+tool-registration checks, verifies package contents with `npm pack --dry-run`,
+and publishes to npm with provenance.
 
 For discovery, publish the source repository on GitHub and add these topics:
 
