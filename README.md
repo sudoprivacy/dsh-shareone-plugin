@@ -20,7 +20,8 @@ dsh --profile web
 
 ## Configure
 
-The default bundle config reads the API key from `SHAREONE_API_KEY`:
+The default bundle config reads the API key from the DSH credential reference
+`SHAREONE_API_KEY`:
 
 ```bash
 export SHAREONE_API_KEY=your_shareone_api_key
@@ -42,12 +43,14 @@ You can override config in your profile patch:
 Credential precedence:
 
 ```txt
-tool argument api_key > plugin config apiKey > environment variable from apiKeyEnv
+tool argument api_key > plugin config apiKey > DSH credential from apiKeyEnv
 ```
 
 The plugin never renders configured API keys in tool output. The
-`shareone_create_guest_key` tool returns a temporary API key in its structured
-result so the agent can help first-time users configure ShareOne.
+`shareone_create_guest_key` tool stores the temporary key in DSH credentials
+under `apiKeyEnv` so later ShareOne calls can use it without exposing the key to
+the model. If the credential store rejects the write, the plugin keeps the key
+in memory for the current DSH process only.
 
 ## Tools
 

@@ -7,6 +7,12 @@ const ctx = {
       registered.push(tool)
     },
   },
+  credentials: {
+    async resolve() {
+      return undefined
+    },
+    async set() {},
+  },
 }
 
 apply(ctx, {

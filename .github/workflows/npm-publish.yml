@@ -41,6 +41,9 @@ jobs:
       - name: Smoke test tool registration
         run: npm run smoke
 
+      - name: Smoke test credential storage
+        run: npm run test:credentials
+
       - name: Check package contents
         run: npm run pack:check
 

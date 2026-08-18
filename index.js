@@ -4,10 +4,11 @@ import http from 'node:http'
 import https from 'node:https'
 import crypto from 'node:crypto'
 import Schema from '@deepseek-ai/schemastery'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export const name = 'shareone'
-export const inject = ['tools']
+export const inject = ['tools', 'credentials']
 
 export const Config = Schema.object({
   baseUrl: Schema.string().default('https://shareone.vip'),
@@ -39,16 +40,22 @@ function getMimeType(filePath, override) {
   return MIME_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream'
 }
 
-function getApiKey(config, explicitApiKey) {
+function getApiKeyRef(config) {
+  return credentialRef(config.apiKeyEnv || 'SHAREONE_API_KEY')
+}
+
+async function getApiKey(ctx, config, explicitApiKey, sessionApiKey) {
   if (explicitApiKey && String(explicitApiKey).trim()) return String(explicitApiKey).trim()
   if (config.apiKey && String(config.apiKey).trim()) return String(config.apiKey).trim()
-  const envName = config.apiKeyEnv || 'SHAREONE_API_KEY'
-  if (envName && process.env[envName] && process.env[envName].trim()) return process.env[envName].trim()
+  const ref = getApiKeyRef(config)
+  const credential = await ctx.credentials.resolve(ref)
+  if (credential?.value) return credential.value
+  if (sessionApiKey && String(sessionApiKey).trim()) return String(sessionApiKey).trim()
   return null
 }
 
-function requireApiKey(config, args = {}) {
-  const apiKey = getApiKey(config, args.api_key)
+async function requireApiKey(ctx, config, args = {}, sessionApiKey = null) {
+  const apiKey = await getApiKey(ctx, config, args.api_key, sessionApiKey)
   if (!apiKey) {
     throw new Error(`ShareOne API key is not configured. Set ${config.apiKeyEnv || 'SHAREONE_API_KEY'} or configure shareone.apiKey.`)
   }
@@ -142,8 +149,8 @@ async function requestJson(config, apiPath, options = {}, payload = null, signal
   return parseJsonResponse(res)
 }
 
-async function requestAuthenticatedJson(config, apiPath, args, options = {}, payload = null, signal = null) {
-  const apiKey = requireApiKey(config, args)
+async function requestAuthenticatedJson(ctx, config, apiPath, args, options = {}, payload = null, signal = null, sessionApiKey = null) {
+  const apiKey = await requireApiKey(ctx, config, args, sessionApiKey)
   return requestJson(config, apiPath, {
     ...options,
     headers: {
@@ -153,8 +160,8 @@ async function requestAuthenticatedJson(config, apiPath, args, options = {}, pay
   }, payload, signal)
 }
 
-async function requestAuthenticatedBuffer(config, apiPath, args, options = {}, body = null, signal = null) {
-  const apiKey = requireApiKey(config, args)
+async function requestAuthenticatedBuffer(ctx, config, apiPath, args, options = {}, body = null, signal = null, sessionApiKey = null) {
+  const apiKey = await requireApiKey(ctx, config, args, sessionApiKey)
   return requestBuffer(appendPath(config.baseUrl, apiPath), {
     ...options,
     timeoutMs: options.timeoutMs || config.timeoutMs,
@@ -234,20 +241,20 @@ async function uploadToAzure(credential, filePath, contentType, timeoutMs, signa
   }, fileData, signal)
 }
 
-async function publishBinaryMultipart(config, filePath, filename, contentType, args, signal) {
+async function publishBinaryMultipart(ctx, config, filePath, filename, contentType, args, signal, sessionApiKey) {
   const fields = {}
   if (args.password) fields.password = args.password
   if (args.watermark) fields.watermark = args.watermark
   if (args.custom_slug) fields.custom_slug = args.custom_slug
 
   const { body, boundary } = buildMultipartBody(fields, filePath, filename, contentType)
-  const res = await requestAuthenticatedBuffer(config, '/api/v1/files', args, {
+  const res = await requestAuthenticatedBuffer(ctx, config, '/api/v1/files', args, {
     method: 'POST',
     headers: {
       'Content-Type': `multipart/form-data; boundary=${boundary}`,
       'Content-Length': body.length,
     },
-  }, body, signal)
+  }, body, signal, sessionApiKey)
   return parseJsonResponse(res)
 }
 
@@ -256,21 +263,21 @@ function shouldFallbackToMultipart(error) {
   return error?.statusCode === 400 && /Direct upload is only supported/i.test(text)
 }
 
-async function updateSettingsPayload(config, ref, payload, args, signal) {
+async function updateSettingsPayload(ctx, config, ref, payload, args, signal, sessionApiKey) {
   const parsed = parseRef(ref)
   const explicitApiPath = endpointForPrefix(parsed.prefix, parsed.shareRef)
   const pagePath = `/api/v1/pages/${encodeURIComponent(parsed.shareRef)}`
   const filePath = `/api/v1/files/${encodeURIComponent(parsed.shareRef)}`
 
   if (explicitApiPath) {
-    return requestAuthenticatedJson(config, explicitApiPath, args, { method: 'PUT' }, payload, signal)
+    return requestAuthenticatedJson(ctx, config, explicitApiPath, args, { method: 'PUT' }, payload, signal, sessionApiKey)
   }
 
   try {
-    return await requestAuthenticatedJson(config, pagePath, args, { method: 'PUT' }, payload, signal)
+    return await requestAuthenticatedJson(ctx, config, pagePath, args, { method: 'PUT' }, payload, signal, sessionApiKey)
   } catch (error) {
     if (error.statusCode === 400 || error.statusCode === 404) {
-      return requestAuthenticatedJson(config, filePath, args, { method: 'PUT' }, payload, signal)
+      return requestAuthenticatedJson(ctx, config, filePath, args, { method: 'PUT' }, payload, signal, sessionApiKey)
     }
     throw error
   }
@@ -307,6 +314,8 @@ function renderJsonSummary(label) {
 }
 
 export function apply(ctx, config) {
+  let sessionApiKey = null
+
   ctx.tools.register(defineTool({
     name: 'shareone_publish_text',
     description: 'Publish HTML, Markdown, or plain text content to ShareOne and return a public share link.',
@@ -318,7 +327,7 @@ export function apply(ctx, config) {
       custom_slug: { type: 'string', description: 'Optional custom short link slug, 3-64 lowercase letters, numbers, or hyphens.' },
       allow_comments: { type: 'boolean', description: 'Enable public review comments for this share.' },
       title: { type: 'string', description: 'Optional display title.' },
-      api_key: { type: 'string', description: 'Optional ShareOne API key override. Prefer plugin config or environment variable.' },
+      api_key: { type: 'string', description: 'Optional ShareOne API key override. Prefer DSH credentials or plugin config.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -335,7 +344,7 @@ export function apply(ctx, config) {
       if (typeof args.allow_comments === 'boolean') payload.allow_comments = args.allow_comments
       if (args.title) payload.title = args.title
 
-      const response = await requestAuthenticatedJson(config, '/api/v1/pages', args, { method: 'POST' }, payload, exec.signal)
+      const response = await requestAuthenticatedJson(ctx, config, '/api/v1/pages', args, { method: 'POST' }, payload, exec.signal, sessionApiKey)
       return pageResult(response, 'page')
     },
   }))
@@ -352,7 +361,7 @@ export function apply(ctx, config) {
       custom_slug: { type: 'string', description: 'Optional custom short link slug.' },
       allow_comments: { type: 'boolean', description: 'Enable comments after upload if supported by the file type.' },
       title: { type: 'string', description: 'Optional display title.' },
-      api_key: { type: 'string', description: 'Optional ShareOne API key override. Prefer plugin config or environment variable.' },
+      api_key: { type: 'string', description: 'Optional ShareOne API key override. Prefer DSH credentials or plugin config.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -368,11 +377,11 @@ export function apply(ctx, config) {
       let response
 
       try {
-        const credential = await requestAuthenticatedJson(config, '/api/v1/files/credential', args, { method: 'POST' }, {
+        const credential = await requestAuthenticatedJson(ctx, config, '/api/v1/files/credential', args, { method: 'POST' }, {
           filename,
           content_type: contentType,
           custom_slug: args.custom_slug || undefined,
-        }, exec.signal)
+        }, exec.signal, sessionApiKey)
 
         if (credential.upload_type === 'azure') {
           await uploadToAzure(credential, filePath, contentType, config.timeoutMs, exec.signal)
@@ -388,17 +397,17 @@ export function apply(ctx, config) {
         if (args.password) confirmPayload.password = args.password
         if (args.watermark) confirmPayload.watermark = args.watermark
         if (args.custom_slug) confirmPayload.custom_slug = args.custom_slug
-        response = await requestAuthenticatedJson(config, '/api/v1/files/confirm', args, { method: 'POST' }, confirmPayload, exec.signal)
+        response = await requestAuthenticatedJson(ctx, config, '/api/v1/files/confirm', args, { method: 'POST' }, confirmPayload, exec.signal, sessionApiKey)
       } catch (error) {
         if (!shouldFallbackToMultipart(error)) throw error
-        response = await publishBinaryMultipart(config, filePath, filename, contentType, args, exec.signal)
+        response = await publishBinaryMultipart(ctx, config, filePath, filename, contentType, args, exec.signal, sessionApiKey)
       }
 
       if (args.title || typeof args.allow_comments === 'boolean') {
         const payload = {}
         if (args.title) payload.title = args.title
         if (typeof args.allow_comments === 'boolean') payload.allow_comments = args.allow_comments
-        response = await updateSettingsPayload(config, response.share_id, payload, args, exec.signal)
+        response = await updateSettingsPayload(ctx, config, response.share_id, payload, args, exec.signal, sessionApiKey)
       }
 
       return pageResult(response, 'file')
@@ -421,14 +430,14 @@ export function apply(ctx, config) {
       allow_comments: { type: 'boolean', description: 'Enable or disable public review comments.' },
       allow_data: { type: 'boolean', description: 'Enable or disable page data collection.' },
       require_viewer_email: { type: 'boolean', description: 'Require viewer email before access.' },
-      api_key: { type: 'string', description: 'Optional ShareOne API key override. Prefer plugin config or environment variable.' },
+      api_key: { type: 'string', description: 'Optional ShareOne API key override. Prefer DSH credentials or plugin config.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
       render: (_args, value) => renderSettings(value),
     },
     async execute(args, exec) {
-      const response = await updateSettingsPayload(config, args.ref, settingsPayload(args), args, exec.signal)
+      const response = await updateSettingsPayload(ctx, config, args.ref, settingsPayload(args), args, exec.signal, sessionApiKey)
       return pageResult(response, 'share')
     },
   }))
@@ -463,7 +472,7 @@ export function apply(ctx, config) {
       ref: { type: 'string', required: true, description: 'ShareOne URL, share_id, or custom slug.' },
       parent_id: { type: 'string', required: true, description: 'Parent comment id.' },
       content: { type: 'string', required: true, description: 'Reply content.' },
-      api_key: { type: 'string', description: 'Optional ShareOne API key override. Prefer plugin config or environment variable.' },
+      api_key: { type: 'string', description: 'Optional ShareOne API key override. Prefer DSH credentials or plugin config.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -476,13 +485,13 @@ export function apply(ctx, config) {
       const parent = (comments || []).find(comment => String(comment.id) === String(args.parent_id))
       if (!parent) throw new Error(`Comment not found: ${args.parent_id}`)
 
-      const response = await requestAuthenticatedJson(config, `/api/v1/shares/${encoded}/comments`, args, { method: 'POST' }, {
+      const response = await requestAuthenticatedJson(ctx, config, `/api/v1/shares/${encoded}/comments`, args, { method: 'POST' }, {
         parent_id: parent.id,
         quote: parent.quote,
         highlighter_data: parent.highlighter_data,
         content: args.content,
         author_role: 'agent',
-      }, exec.signal)
+      }, exec.signal, sessionApiKey)
       return { ok: true, ref: shareRef, comment: response }
     },
   }))
@@ -495,7 +504,7 @@ export function apply(ctx, config) {
       comment_id: { type: 'string', required: true, description: 'Comment id to update.' },
       status: { type: 'string', required: true, description: 'New status: open, in_progress, resolved, or dismissed.' },
       note: { type: 'string', description: 'Optional resolution note.' },
-      api_key: { type: 'string', description: 'Optional ShareOne API key override. Prefer plugin config or environment variable.' },
+      api_key: { type: 'string', description: 'Optional ShareOne API key override. Prefer DSH credentials or plugin config.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -508,12 +517,14 @@ export function apply(ctx, config) {
       const payload = { status: args.status }
       if (args.note) payload.note = args.note
       const response = await requestAuthenticatedJson(
+        ctx,
         config,
         `/api/v1/shares/${encodeURIComponent(shareRef)}/comments/${encodeURIComponent(args.comment_id)}/status`,
         args,
         { method: 'PUT' },
         payload,
         exec.signal,
+        sessionApiKey,
       )
       return { ok: true, ref: shareRef, comment_id: args.comment_id, status: args.status, result: response }
     },
@@ -527,7 +538,7 @@ export function apply(ctx, config) {
       output_path: { type: 'string', required: true, description: 'Local path where the downloaded file should be written.' },
       password: { type: 'string', description: 'Password for protected public downloads.' },
       owner: { type: 'boolean', description: 'Use owner API download endpoint. Requires API key.' },
-      api_key: { type: 'string', description: 'Optional ShareOne API key override. Prefer plugin config or environment variable.' },
+      api_key: { type: 'string', description: 'Optional ShareOne API key override. Prefer DSH credentials or plugin config.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -537,7 +548,7 @@ export function apply(ctx, config) {
       const { shareRef } = parseRef(args.ref)
       let res
       if (args.owner) {
-        res = await requestAuthenticatedBuffer(config, `/api/v1/shares/${encodeURIComponent(shareRef)}/download`, args, { method: 'GET' }, null, exec.signal)
+        res = await requestAuthenticatedBuffer(ctx, config, `/api/v1/shares/${encodeURIComponent(shareRef)}/download`, args, { method: 'GET' }, null, exec.signal, sessionApiKey)
       } else if (args.password) {
         const body = JSON.stringify({ ref: shareRef, password: args.password })
         res = await requestBuffer(appendPath(config.baseUrl, '/api/v1/public-download'), {
@@ -574,14 +585,31 @@ export function apply(ctx, config) {
     parameters: {},
     output: {
       schema: { type: 'object', additionalProperties: true },
-      render: (_args, value) => [{ type: 'text', text: `Created a ShareOne guest API key. Set ${value.api_key_env} to use it in future calls.` }],
+      render: (_args, value) => {
+        if (value.stored) {
+          return [{ type: 'text', text: `Created and stored a ShareOne guest API key as ${value.api_key_env}. Future ShareOne calls can use it without exposing the key.` }]
+        }
+        return [{ type: 'text', text: `Created a ShareOne guest API key for this session. It could not be stored as ${value.api_key_env}: ${value.store_error}` }]
+      },
     },
     async execute(_args, exec) {
       const response = await requestJson(config, '/api/v1/agent-guest-key', { method: 'POST' }, null, exec.signal)
+      const ref = getApiKeyRef(config)
+      sessionApiKey = response.api_key
+      let stored = false
+      let storeError = null
+      try {
+        await ctx.credentials.set(ref, response.api_key)
+        stored = true
+        sessionApiKey = null
+      } catch (error) {
+        storeError = error?.message || String(error)
+      }
       return {
         ok: true,
-        api_key: response.api_key,
-        api_key_env: config.apiKeyEnv || 'SHAREONE_API_KEY',
+        stored,
+        api_key_env: ref,
+        store_error: storeError,
         bind_url: appendPath(config.baseUrl, '/account'),
       }
     },
