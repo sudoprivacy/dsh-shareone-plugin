@@ -1,0 +1,40 @@
+{
+  "name": "dsh-shareone-plugin",
+  "version": "0.1.0",
+  "description": "ShareOne tools for DeepSeek Harness",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "shareone",
+    "cordis",
+    "agent-tool"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.0.1-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "license": "MIT"
+}

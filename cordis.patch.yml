@@ -1,0 +1,7 @@
+- insert:
+    - id: shareone
+      name: dsh-shareone-plugin
+      config:
+        baseUrl: https://shareone.vip
+        apiKeyEnv: SHAREONE_API_KEY
+        timeoutMs: 60000
