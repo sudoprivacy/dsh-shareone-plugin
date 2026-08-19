@@ -5,6 +5,7 @@
 </p>
 
 <p align="center">
+  <a href="https://shareone.vip"><img alt="Website" src="https://img.shields.io/badge/website-shareone.vip-0f766e"></a>
   <img alt="npm" src="https://img.shields.io/npm/v/dsh-shareone-plugin?label=npm&color=7c3aed">
   <img alt="DSH Plugin" src="https://img.shields.io/badge/DSH-plugin-2563eb">
   <img alt="ShareOne" src="https://img.shields.io/badge/ShareOne-share%20links-16a34a">
