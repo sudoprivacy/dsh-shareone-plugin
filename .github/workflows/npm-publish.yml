@@ -44,6 +44,9 @@ jobs:
       - name: Smoke test credential storage
         run: npm run test:credentials
 
+      - name: Smoke test text file routing
+        run: npm run test:text-routing
+
       - name: Check package contents
         run: npm run pack:check
 

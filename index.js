@@ -29,6 +29,8 @@ const MIME_TYPES = {
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 }
 
+const TEXT_FILE_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.txt'])
+
 function appendPath(baseUrl, apiPath) {
   const trimmedBase = String(baseUrl || '').replace(/\/+$/, '')
   const normalizedPath = apiPath.startsWith('/') ? apiPath : `/${apiPath}`
@@ -38,6 +40,10 @@ function appendPath(baseUrl, apiPath) {
 function getMimeType(filePath, override) {
   if (override) return override
   return MIME_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream'
+}
+
+function isTextPageFile(filePath, filename) {
+  return [filename, filePath].some(value => TEXT_FILE_EXTENSIONS.has(path.extname(String(value || '')).toLowerCase()))
 }
 
 function getApiKeyRef(config) {
@@ -351,7 +357,7 @@ export function apply(ctx, config) {
 
   ctx.tools.register(defineTool({
     name: 'shareone_publish_file',
-    description: 'Publish a local PDF, Word, PowerPoint, or other file to ShareOne and return a public share link.',
+    description: 'Publish a local PDF, Word, or PowerPoint document to ShareOne and return a public share link. Use shareone_publish_text for HTML, Markdown, or TXT content.',
     parameters: {
       file_path: { type: 'string', required: true, description: 'Local file path to upload. Absolute paths are preferred.' },
       filename: { type: 'string', description: 'Optional display filename override.' },
@@ -375,6 +381,21 @@ export function apply(ctx, config) {
       const filename = args.filename || path.basename(filePath)
       const contentType = getMimeType(filePath, args.content_type)
       let response
+
+      if (isTextPageFile(filePath, filename)) {
+        const payload = {
+          filename,
+          html_content: fs.readFileSync(filePath, 'utf8'),
+        }
+        if (args.password) payload.password = args.password
+        if (args.watermark) payload.watermark = args.watermark
+        if (args.custom_slug) payload.custom_slug = args.custom_slug
+        if (typeof args.allow_comments === 'boolean') payload.allow_comments = args.allow_comments
+        if (args.title) payload.title = args.title
+
+        response = await requestAuthenticatedJson(ctx, config, '/api/v1/pages', args, { method: 'POST' }, payload, exec.signal, sessionApiKey)
+        return pageResult(response, 'page')
+      }
 
       try {
         const credential = await requestAuthenticatedJson(ctx, config, '/api/v1/files/credential', args, { method: 'POST' }, {

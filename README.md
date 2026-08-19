@@ -72,7 +72,13 @@ Uses `POST /api/v1/pages`.
 
 ### shareone_publish_file
 
-Publish a local file such as PDF, Word, PowerPoint, or other binary files.
+Publish a local PDF, Word, or PowerPoint document.
+
+HTML, Markdown, and TXT files are page content, not binary document uploads.
+Use `shareone_publish_text` for generated text content. If a local
+`.html`, `.htm`, `.md`, `.markdown`, or `.txt` file is passed to
+`shareone_publish_file`, the plugin reads it as UTF-8 text and routes it to
+`POST /api/v1/pages` instead of the binary file endpoint.
 
 Main arguments:
 
@@ -85,7 +91,7 @@ Main arguments:
 - `allow_comments`
 - `title`
 
-Uses direct upload:
+Binary documents use direct upload:
 
 ```txt
 POST /api/v1/files/credential
