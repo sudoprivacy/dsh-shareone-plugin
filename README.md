@@ -150,6 +150,9 @@ Main arguments:
 - `ref`
 - `parent_id`
 - `content`
+- `state`: required agent stance. Use `resolved-agree` to resolve the parent
+  thread, `open-disagree` to reply while keeping the parent open, or
+  `open-need-input` to ask for clarification while keeping the parent open.
 
 The tool fetches the parent comment first and reuses its quote and anchor data.
 

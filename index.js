@@ -30,6 +30,7 @@ const MIME_TYPES = {
 }
 
 const TEXT_FILE_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.txt'])
+const AGENT_REPLY_STATES = new Set(['resolved-agree', 'open-disagree', 'open-need-input'])
 
 function appendPath(baseUrl, apiPath) {
   const trimmedBase = String(baseUrl || '').replace(/\/+$/, '')
@@ -542,6 +543,7 @@ export function apply(ctx, config) {
       ref: { type: 'string', required: true, description: 'ShareOne URL, share_id, or custom slug.' },
       parent_id: { type: 'string', required: true, description: 'Parent comment id.' },
       content: { type: 'string', required: true, description: 'Reply content.' },
+      state: { type: 'string', required: true, description: 'Agent reply state: resolved-agree resolves the parent comment, open-disagree keeps it open with an objection, open-need-input keeps it open while requesting clarification.' },
       api_key: { type: 'string', description: 'Optional ShareOne API key override. Prefer DSH credentials or plugin config.' },
     },
     output: {
@@ -549,6 +551,10 @@ export function apply(ctx, config) {
       render: renderJsonSummary('Posted ShareOne comment reply'),
     },
     async execute(args, exec) {
+      const state = typeof args.state === 'string' ? args.state.trim() : ''
+      if (!AGENT_REPLY_STATES.has(state)) {
+        throw new Error(`Invalid ShareOne agent reply state: ${args.state || '(missing)'}. Use one of: ${Array.from(AGENT_REPLY_STATES).join(', ')}`)
+      }
       const { shareRef } = parseRef(args.ref)
       const encoded = encodeURIComponent(shareRef)
       const comments = await requestJson(config, `/api/v1/shares/${encoded}/comments?status=all`, { method: 'GET' }, null, exec.signal)
@@ -561,6 +567,7 @@ export function apply(ctx, config) {
         highlighter_data: parent.highlighter_data,
         content: args.content,
         author_role: 'agent',
+        state,
       }, exec.signal, sessionApiKey)
       return { ok: true, ref: shareRef, comment: response }
     },

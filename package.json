@@ -1,6 +1,6 @@
 {
   "name": "dsh-shareone-plugin",
-  "version": "0.1.0-beta.6",
+  "version": "0.1.0-beta.7",
   "description": "ShareOne tools for DeepSeek Harness",
   "type": "module",
   "main": "index.js",
@@ -18,6 +18,7 @@
     "test:credentials": "node ./scripts/test-credentials.mjs",
     "test:text-routing": "node ./scripts/test-text-file-routing.mjs",
     "test:comments-render": "node ./scripts/test-comments-render.mjs",
+    "test:reply-state": "node ./scripts/test-reply-comment-state.mjs",
     "pack:check": "npm pack --dry-run"
   },
   "files": [
