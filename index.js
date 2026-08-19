@@ -187,9 +187,10 @@ function parseJsonResponse(res) {
   }
 }
 
-function pageResult(response, contentKind) {
+function pageResult(response, contentKind, operation = 'create') {
   return {
     ok: true,
+    operation,
     share_id: response.share_id,
     custom_slug: response.custom_slug || null,
     share_url: response.share_url,
@@ -199,6 +200,42 @@ function pageResult(response, contentKind) {
     custom_slug_warning: response.custom_slug_warning || null,
     custom_slug_suggestions: response.custom_slug_suggestions || null,
   }
+}
+
+function textPagePayload(args, filename, content) {
+  const payload = {
+    filename,
+    html_content: content,
+  }
+  if (args.password) payload.password = args.password
+  if (args.watermark) payload.watermark = args.watermark
+  if (args.custom_slug) payload.custom_slug = args.custom_slug
+  if (typeof args.allow_comments === 'boolean') payload.allow_comments = args.allow_comments
+  if (args.title) payload.title = args.title
+  return payload
+}
+
+function textPageRef(args) {
+  const ref = args.ref || args.share_id
+  return ref ? parseRef(ref).shareRef : null
+}
+
+async function publishTextPage(ctx, config, args, filename, content, signal, sessionApiKey) {
+  const payload = textPagePayload(args, filename, content)
+  const ref = textPageRef(args)
+  if (ref) {
+    return requestAuthenticatedJson(
+      ctx,
+      config,
+      `/api/v1/pages/${encodeURIComponent(ref)}`,
+      args,
+      { method: 'PUT' },
+      payload,
+      signal,
+      sessionApiKey,
+    )
+  }
+  return requestAuthenticatedJson(ctx, config, '/api/v1/pages', args, { method: 'POST' }, payload, signal, sessionApiKey)
 }
 
 function buildMultipartBody(fields, filePath, filename, contentType) {
@@ -309,7 +346,8 @@ function settingsPayload(args) {
 
 function renderShare(value) {
   const warning = value.custom_slug_warning ? `\nCustom slug warning: ${value.custom_slug_warning}` : ''
-  return [{ type: 'text', text: `Published to ShareOne: ${value.share_url}${warning}` }]
+  const verb = value.operation === 'update' ? 'Updated' : 'Published'
+  return [{ type: 'text', text: `${verb} ShareOne share: ${value.share_url}${warning}` }]
 }
 
 function renderSettings(value) {
@@ -336,11 +374,9 @@ function parseAnchorSummary(highlighterData) {
 }
 
 function normalizeRenderedComment(comment, parentCommentId = null) {
-  const isReply = Boolean(parentCommentId)
   return {
     id: comment?.id || null,
     parent_comment_id: parentCommentId || comment?.id || null,
-    operation_target: isReply ? 'reply_read_only_use_parent_comment_id_for_status' : 'parent_comment_use_this_id_for_status_and_agent_reply',
     status: comment?.status || null,
     author_role: comment?.author_role || null,
     author_username: comment?.user?.username || null,
@@ -363,7 +399,6 @@ function renderComments(_args, value) {
   const summary = value.summary || {}
   const lines = [
     `ShareOne comments for ${value.ref || 'share'} (filter: ${value.status || 'all'}): ${summary.total || 0} total, ${summary.open || 0} open, ${summary.in_progress || 0} in progress, ${summary.resolved || 0} resolved, ${summary.dismissed || 0} dismissed.`,
-    'Use parent_comment_id when updating status or posting an agent reply. Reply ids are included for context only.',
     `Comments JSON:\n${JSON.stringify(comments, null, 2)}`,
   ]
   return [{ type: 'text', text: lines.join('\n') }]
@@ -374,10 +409,12 @@ export function apply(ctx, config) {
 
   ctx.tools.register(defineTool({
     name: 'shareone_publish_text',
-    description: 'Publish HTML, Markdown, or plain text content to ShareOne and return a public share link.',
+    description: 'Publish HTML, Markdown, or plain text content to ShareOne and return a public share link. Provide ref or share_id to update an existing HTML/Markdown/TXT share instead of creating a new link.',
     parameters: {
       filename: { type: 'string', required: true, description: 'Display filename, for example index.html, notes.md, or readme.txt.' },
       content: { type: 'string', required: true, description: 'HTML, Markdown, or plain text content to publish.' },
+      ref: { type: 'string', description: 'Existing ShareOne URL, share_id, or custom slug to update. Omit to create a new share.' },
+      share_id: { type: 'string', description: 'Alias for ref. Existing ShareOne URL, share_id, or custom slug to update.' },
       password: { type: 'string', description: 'Optional access password.' },
       watermark: { type: 'string', description: 'Optional watermark text.' },
       custom_slug: { type: 'string', description: 'Optional custom short link slug, 3-64 lowercase letters, numbers, or hyphens.' },
@@ -390,18 +427,12 @@ export function apply(ctx, config) {
       render: (_args, value) => renderShare(value),
     },
     async execute(args, exec) {
-      const payload = {
-        filename: args.filename,
-        html_content: args.content,
+      if (args.ref && args.share_id && parseRef(args.ref).shareRef !== parseRef(args.share_id).shareRef) {
+        throw new Error('Provide only one update target: ref or share_id.')
       }
-      if (args.password) payload.password = args.password
-      if (args.watermark) payload.watermark = args.watermark
-      if (args.custom_slug) payload.custom_slug = args.custom_slug
-      if (typeof args.allow_comments === 'boolean') payload.allow_comments = args.allow_comments
-      if (args.title) payload.title = args.title
-
-      const response = await requestAuthenticatedJson(ctx, config, '/api/v1/pages', args, { method: 'POST' }, payload, exec.signal, sessionApiKey)
-      return pageResult(response, 'page')
+      const operation = textPageRef(args) ? 'update' : 'create'
+      const response = await publishTextPage(ctx, config, args, args.filename, args.content, exec.signal, sessionApiKey)
+      return pageResult(response, 'page', operation)
     },
   }))
 
@@ -412,6 +443,8 @@ export function apply(ctx, config) {
       file_path: { type: 'string', required: true, description: 'Local file path to upload. Absolute paths are preferred.' },
       filename: { type: 'string', description: 'Optional display filename override.' },
       content_type: { type: 'string', description: 'Optional MIME type override.' },
+      ref: { type: 'string', description: 'For local HTML, Markdown, or TXT files only: existing ShareOne URL, share_id, or custom slug to update.' },
+      share_id: { type: 'string', description: 'Alias for ref. For local HTML, Markdown, or TXT files only: existing ShareOne URL, share_id, or custom slug to update.' },
       password: { type: 'string', description: 'Optional access password.' },
       watermark: { type: 'string', description: 'Optional watermark text.' },
       custom_slug: { type: 'string', description: 'Optional custom short link slug.' },
@@ -433,18 +466,16 @@ export function apply(ctx, config) {
       let response
 
       if (isTextPageFile(filePath, filename)) {
-        const payload = {
-          filename,
-          html_content: fs.readFileSync(filePath, 'utf8'),
+        if (args.ref && args.share_id && parseRef(args.ref).shareRef !== parseRef(args.share_id).shareRef) {
+          throw new Error('Provide only one update target: ref or share_id.')
         }
-        if (args.password) payload.password = args.password
-        if (args.watermark) payload.watermark = args.watermark
-        if (args.custom_slug) payload.custom_slug = args.custom_slug
-        if (typeof args.allow_comments === 'boolean') payload.allow_comments = args.allow_comments
-        if (args.title) payload.title = args.title
+        const operation = textPageRef(args) ? 'update' : 'create'
+        response = await publishTextPage(ctx, config, args, filename, fs.readFileSync(filePath, 'utf8'), exec.signal, sessionApiKey)
+        return pageResult(response, 'page', operation)
+      }
 
-        response = await requestAuthenticatedJson(ctx, config, '/api/v1/pages', args, { method: 'POST' }, payload, exec.signal, sessionApiKey)
-        return pageResult(response, 'page')
+      if (args.ref || args.share_id) {
+        throw new Error('ref/share_id updates are only supported for local HTML, Markdown, or TXT files. Binary file content updates create a new ShareOne link.')
       }
 
       try {
@@ -509,7 +540,7 @@ export function apply(ctx, config) {
     },
     async execute(args, exec) {
       const response = await updateSettingsPayload(ctx, config, args.ref, settingsPayload(args), args, exec.signal, sessionApiKey)
-      return pageResult(response, 'share')
+      return pageResult(response, 'share', 'update')
     },
   }))
 

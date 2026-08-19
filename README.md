@@ -56,19 +56,23 @@ in memory for the current DSH process only.
 
 ### shareone_publish_text
 
-Publish HTML, Markdown, or plain text content.
+Publish HTML, Markdown, or plain text content. Omit `ref`/`share_id` to create
+a new share. Provide `ref` or `share_id` to update the content of an existing
+HTML, Markdown, or TXT share in place.
 
 Main arguments:
 
 - `filename`
 - `content`
+- `ref`
+- `share_id`
 - `password`
 - `watermark`
 - `custom_slug`
 - `allow_comments`
 - `title`
 
-Uses `POST /api/v1/pages`.
+Creates use `POST /api/v1/pages`. Updates use `PUT /api/v1/pages/{ref}`.
 
 ### shareone_publish_file
 
@@ -78,13 +82,17 @@ HTML, Markdown, and TXT files are page content, not binary document uploads.
 Use `shareone_publish_text` for generated text content. If a local
 `.html`, `.htm`, `.md`, `.markdown`, or `.txt` file is passed to
 `shareone_publish_file`, the plugin reads it as UTF-8 text and routes it to
-`POST /api/v1/pages` instead of the binary file endpoint.
+the page endpoint instead of the binary file endpoint. Passing `ref` or
+`share_id` updates the existing page in place with `PUT /api/v1/pages/{ref}`;
+omitting them creates a new page with `POST /api/v1/pages`.
 
 Main arguments:
 
 - `file_path`
 - `filename`
 - `content_type`
+- `ref`
+- `share_id`
 - `password`
 - `watermark`
 - `custom_slug`
@@ -138,8 +146,6 @@ Main arguments:
 - `status`: `all`, `open`, `in_progress`, `unresolved`, `resolved`, or `dismissed`
 
 This is a public read operation and does not require an API key.
-When updating status or posting an agent reply, use the rendered
-`parent_comment_id`; reply ids are shown for context only.
 
 ### shareone_reply_comment
 

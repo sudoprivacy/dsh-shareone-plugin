@@ -109,8 +109,6 @@ try {
   for (const expected of [
     'parent-1',
     'reply-1',
-    'parent_comment_use_this_id_for_status_and_agent_reply',
-    'reply_read_only_use_parent_comment_id_for_status',
     'Please update this copy.',
     'old copy',
     'highlighter_data',
