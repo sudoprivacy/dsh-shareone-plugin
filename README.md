@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="npm beta" src="https://img.shields.io/npm/v/dsh-shareone-plugin/beta?label=npm%20beta&color=7c3aed">
+  <img alt="npm" src="https://img.shields.io/npm/v/dsh-shareone-plugin?label=npm&color=7c3aed">
   <img alt="DSH Plugin" src="https://img.shields.io/badge/DSH-plugin-2563eb">
   <img alt="ShareOne" src="https://img.shields.io/badge/ShareOne-share%20links-16a34a">
   <img alt="Free" src="https://img.shields.io/badge/free-90%20day%20active%20retention-f59e0b">
