@@ -127,7 +127,10 @@ page update to file update when the type is unknown.
 
 ### shareone_get_comments
 
-List comments and summary counts for a share.
+List comments and summary counts for a share. The rendered tool output includes
+thread details for agents: parent comment ids, reply ids, statuses, author
+roles, usernames, comment content, selected quote text, screenshot URLs, and
+the raw `highlighter_data` anchor JSON used to locate the comment on the page.
 
 Main arguments:
 
@@ -135,6 +138,8 @@ Main arguments:
 - `status`: `all`, `open`, `in_progress`, `unresolved`, `resolved`, or `dismissed`
 
 This is a public read operation and does not require an API key.
+When updating status or posting an agent reply, use the rendered
+`parent_comment_id`; reply ids are shown for context only.
 
 ### shareone_reply_comment
 

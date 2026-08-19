@@ -319,6 +319,55 @@ function renderJsonSummary(label) {
   return (_args, value) => [{ type: 'text', text: `${label}: ${JSON.stringify(value)}` }]
 }
 
+function parseAnchorSummary(highlighterData) {
+  if (!highlighterData) return null
+  try {
+    const parsed = typeof highlighterData === 'string' ? JSON.parse(highlighterData) : highlighterData
+    return {
+      startMeta: parsed?.startMeta || null,
+      endMeta: parsed?.endMeta || null,
+      text: parsed?.text || null,
+      id: parsed?.id || null,
+    }
+  } catch {
+    return null
+  }
+}
+
+function normalizeRenderedComment(comment, parentCommentId = null) {
+  const isReply = Boolean(parentCommentId)
+  return {
+    id: comment?.id || null,
+    parent_comment_id: parentCommentId || comment?.id || null,
+    operation_target: isReply ? 'reply_read_only_use_parent_comment_id_for_status' : 'parent_comment_use_this_id_for_status_and_agent_reply',
+    status: comment?.status || null,
+    author_role: comment?.author_role || null,
+    author_username: comment?.user?.username || null,
+    user_id: comment?.user_id || null,
+    content: comment?.content || '',
+    quote: comment?.quote || '',
+    anchor_summary: parseAnchorSummary(comment?.highlighter_data),
+    highlighter_data: comment?.highlighter_data || '',
+    screenshot_url: comment?.screenshot_url || null,
+    created_at: comment?.created_at || null,
+    updated_at: comment?.updated_at || null,
+    resolution_note: comment?.resolution_note || null,
+    agent_stance: comment?.agent_stance || null,
+    replies: (comment?.replies || []).map(reply => normalizeRenderedComment(reply, comment?.id || null)),
+  }
+}
+
+function renderComments(_args, value) {
+  const comments = (value.comments || []).map(comment => normalizeRenderedComment(comment))
+  const summary = value.summary || {}
+  const lines = [
+    `ShareOne comments for ${value.ref || 'share'} (filter: ${value.status || 'all'}): ${summary.total || 0} total, ${summary.open || 0} open, ${summary.in_progress || 0} in progress, ${summary.resolved || 0} resolved, ${summary.dismissed || 0} dismissed.`,
+    'Use parent_comment_id when updating status or posting an agent reply. Reply ids are included for context only.',
+    `Comments JSON:\n${JSON.stringify(comments, null, 2)}`,
+  ]
+  return [{ type: 'text', text: lines.join('\n') }]
+}
+
 export function apply(ctx, config) {
   let sessionApiKey = null
 
@@ -472,7 +521,7 @@ export function apply(ctx, config) {
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
-      render: (_args, value) => [{ type: 'text', text: `ShareOne comments: ${value.summary.total} total, ${value.summary.open} open, ${value.summary.in_progress} in progress.` }],
+      render: renderComments,
     },
     async execute(args, exec) {
       const { shareRef } = parseRef(args.ref)
