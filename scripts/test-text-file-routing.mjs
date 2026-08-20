@@ -77,6 +77,7 @@ try {
   if (pageRequest.apiKey !== 'test-api-key') throw new Error('API key was not sent to the page endpoint')
   if (pageRequest.body.filename !== 'index.html') throw new Error('Filename was not forwarded')
   if (pageRequest.body.html_content !== '<!doctype html><title>ok</title>') throw new Error('HTML content was not forwarded')
+  if (pageRequest.body.publish_source !== 'dsh') throw new Error('DSH publish_source was not forwarded')
   if (pageRequest.body.title !== 'HTML test') throw new Error('Title was not forwarded')
   if (pageRequest.body.allow_comments !== true) throw new Error('allow_comments was not forwarded')
   if (result.content_kind !== 'page') throw new Error('HTML publish_file result should be marked as page content')

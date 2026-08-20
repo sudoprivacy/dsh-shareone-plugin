@@ -31,6 +31,7 @@ const MIME_TYPES = {
 
 const TEXT_FILE_EXTENSIONS = new Set(['.html', '.htm', '.md', '.markdown', '.txt'])
 const AGENT_REPLY_STATES = new Set(['resolved-agree', 'open-disagree', 'open-need-input'])
+const PUBLISH_SOURCE = 'dsh'
 
 function appendPath(baseUrl, apiPath) {
   const trimmedBase = String(baseUrl || '').replace(/\/+$/, '')
@@ -207,6 +208,7 @@ function textPagePayload(args, filename, content) {
     filename,
     html_content: content,
   }
+  if (!textPageRef(args)) payload.publish_source = PUBLISH_SOURCE
   if (args.password) payload.password = args.password
   if (args.watermark) payload.watermark = args.watermark
   if (args.custom_slug) payload.custom_slug = args.custom_slug
@@ -287,6 +289,7 @@ async function uploadToAzure(credential, filePath, contentType, timeoutMs, signa
 
 async function publishBinaryMultipart(ctx, config, filePath, filename, contentType, args, signal, sessionApiKey) {
   const fields = {}
+  fields.publish_source = PUBLISH_SOURCE
   if (args.password) fields.password = args.password
   if (args.watermark) fields.watermark = args.watermark
   if (args.custom_slug) fields.custom_slug = args.custom_slug
@@ -495,6 +498,7 @@ export function apply(ctx, config) {
           share_id: credential.share_id,
           filename,
           content_type: contentType,
+          publish_source: PUBLISH_SOURCE,
         }
         if (args.password) confirmPayload.password = args.password
         if (args.watermark) confirmPayload.watermark = args.watermark
@@ -701,7 +705,7 @@ export function apply(ctx, config) {
       },
     },
     async execute(_args, exec) {
-      const response = await requestJson(config, '/api/v1/agent-guest-key', { method: 'POST' }, null, exec.signal)
+      const response = await requestJson(config, '/api/v1/agent-guest-key', { method: 'POST' }, { source: PUBLISH_SOURCE }, exec.signal)
       const ref = getApiKeyRef(config)
       sessionApiKey = response.api_key
       let stored = false
