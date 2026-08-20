@@ -3,11 +3,17 @@ import { apply } from '../index.js'
 
 const secret = 'shareone-test-secret'
 let pageApiKey = null
+let guestKeyBody = null
 
 const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/v1/agent-guest-key') {
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ api_key: secret }))
+    const chunks = []
+    req.on('data', chunk => chunks.push(Buffer.from(chunk)))
+    req.on('end', () => {
+      guestKeyBody = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ api_key: secret }))
+    })
     return
   }
 
@@ -61,6 +67,7 @@ try {
 
   const created = await createGuestKey.execute({}, {})
   if (created.api_key !== undefined) throw new Error('Guest key result exposed the API key')
+  if (guestKeyBody?.source !== 'dsh') throw new Error('Guest key source was not sent as dsh')
   if (store.get('SHAREONE_API_KEY') !== secret) throw new Error('Guest key was not stored in DSH credentials')
 
   const rendered = createGuestKey.output.render({}, created).map(part => part.text || '').join('\n')

@@ -81,12 +81,14 @@ try {
   const textUpdate = requests.find(request => request.method === 'PUT' && request.url === '/api/v1/pages/existing-text')
   if (!textUpdate) throw new Error('shareone_publish_text did not update the existing page')
   if (textUpdate.body.html_content !== '<!doctype html><title>updated from text</title>') throw new Error('Text update content was not forwarded')
+  if (textUpdate.body.publish_source !== undefined) throw new Error('Text updates should not overwrite publish_source')
   if (textUpdate.body.title !== 'Updated title') throw new Error('Text update title was not forwarded')
   if (textResult.operation !== 'update') throw new Error('Text update result should be marked as update')
 
   const fileUpdate = requests.find(request => request.method === 'PUT' && request.url === '/api/v1/pages/existing-file-text')
   if (!fileUpdate) throw new Error('shareone_publish_file did not update the existing text page')
   if (fileUpdate.body.html_content !== '<!doctype html><title>updated from file</title>') throw new Error('File text update content was not forwarded')
+  if (fileUpdate.body.publish_source !== undefined) throw new Error('File text updates should not overwrite publish_source')
   if (fileResult.operation !== 'update') throw new Error('File text update result should be marked as update')
 
   const rendered = publishText.output.render({}, textResult).map(part => part.text || '').join('\n')
